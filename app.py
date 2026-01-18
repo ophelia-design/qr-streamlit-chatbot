@@ -11,12 +11,13 @@ import streamlit as st
 import pandas as pd
 import os
 import qrcode
+from io import BytesIO
 
 DATA_FILE = "data.csv"
-QR_DIR = "qrcodes"
 
-os.makedirs(QR_DIR, exist_ok=True)
-
+# =========================
+# Utility Functions
+# =========================
 def generate_user_id():
     if not os.path.exists(DATA_FILE):
         return "USR0001"
@@ -28,14 +29,6 @@ def save_data(data):
     header = not os.path.exists(DATA_FILE)
     df_new.to_csv(DATA_FILE, mode="a", header=header, index=False)
 
-def generate_qr(user_id):
-    base_url = st.secrets["BASE_URL"]
-    url = f"{base_url}/?uid={user_id}"
-    img = qrcode.make(url)
-    path = f"{QR_DIR}/{user_id}.png"
-    img.save(path)
-    return path
-
 def get_user(uid):
     if not os.path.exists(DATA_FILE):
         return None
@@ -43,19 +36,33 @@ def get_user(uid):
     row = df[df["User_ID"] == uid]
     return row.iloc[0] if not row.empty else None
 
+def generate_qr_image(url):
+    img = qrcode.make(url)
+    buf = BytesIO()
+    img.save(buf)
+    buf.seek(0)
+    return buf
+
+# =========================
+# MODE 1: QR SCAN (DETAIL)
+# =========================
 query = st.query_params
 if "uid" in query:
     uid = query["uid"]
     data = get_user(uid)
 
     st.title("📄 Detail Data Pengguna")
+
     if data is not None:
-        st.json(data.to_dict())
-        st.image(f"{QR_DIR}/{uid}.png")
+        st.table(data.to_frame(name="Nilai"))
     else:
-        st.error("Data tidak ditemukan")
+        st.error("❌ Data tidak ditemukan")
+
     st.stop()
 
+# =========================
+# MODE 2: INPUT DATA
+# =========================
 st.title("🤖 Rule-Based Chatbot Input Data")
 
 user_id = generate_user_id()
@@ -76,11 +83,16 @@ if submit:
     }
 
     save_data(data)
-    qr_path = generate_qr(user_id)
+
+    base_url = st.get_option("server.baseUrlPath") or ""
+    app_url = st.runtime.get_instance()._session_mgr._runtime._server._address
+
+    full_url = f"https://{app_url}/?uid={user_id}"
 
     st.success("✅ Data berhasil disimpan")
-    st.image(qr_path)
-    st.write("📱 Scan QR untuk melihat detail data")
+
+    qr_img = generate_qr_image(full_url)
+    st.image(qr_img, caption="Scan QR untuk melihat detail data")
 
     if st.button("➕ Tambah Data Lagi"):
         st.experimental_rerun()
